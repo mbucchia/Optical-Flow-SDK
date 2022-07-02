@@ -1,0 +1,6 @@
+#ROI config file format.
+numrois 3
+#roi<roi number> <starting position of ROI in x-direction> <starting position of ROI in y-direction> <widht of ROI> < height of ROI>
+roi0 64 96 216 128
+roi1 512 96 320 288
+roi2 96 128 256 64
