@@ -1,4 +1,4 @@
-# Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+# Copyright 2018-2022 NVIDIA Corporation.  All rights reserved.
 #
 # Please refer to the NVIDIA end user license agreement (EULA) associated
 # with this source code for terms and conditions that govern your use of
@@ -68,4 +68,5 @@ if(WIN32)
 endif()
 
 add_subdirectory(AppOFCuda)
+add_subdirectory(AppOFVulkan)
 add_subdirectory(AppStereoDisparityCuda)

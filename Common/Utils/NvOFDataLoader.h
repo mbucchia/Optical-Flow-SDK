@@ -1,12 +1,26 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
 
 
@@ -106,6 +120,35 @@ private:
     uint32_t m_bpp;
     uint32_t m_pitch;
     std::unique_ptr<uint8_t[]> m_pFrameData;
+    std::vector<std::string> m_fileNames;
+    uint32_t m_idx = 0;
+    bool m_bStatus = true;
+    friend std::unique_ptr<NvOFDataLoader> CreateDataloader(const std::string& dataPath);
+};
+
+class NvOFDataLoaderFlo : public NvOFDataLoader
+{
+public:
+    ~NvOFDataLoaderFlo() {}
+    uint8_t* CurrentItem() override { return reinterpret_cast<uint8_t*>(m_pFlowFixedPoint.get()); }
+    uint32_t GetWidth() override { return m_width; }
+    uint32_t GetHeight() override { return m_height; }
+    uint32_t GetPitch() override { return 0; }
+    NV_OF_BUFFER_FORMAT GetBufferFormat()   override {
+        return NV_OF_BUFFER_FORMAT_SHORT2;
+    }
+    bool IsDone() override { return (m_idx == m_fileNames.size()); }
+    void Next();
+protected:
+    NvOFDataLoaderFlo(const char* szFileName, float precision = 32.0f);
+private:
+    void convertFloat2Fixed(const float* pfFlow, NV_OF_FLOW_VECTOR* pFixedFlow);
+    void ReadFlow(const std::string& fileName);
+    uint32_t m_width;
+    uint32_t m_height;
+    float m_precision;
+    std::unique_ptr<float[]> m_pFlowFloat;
+    std::unique_ptr<NV_OF_FLOW_VECTOR[]> m_pFlowFixedPoint;
     std::vector<std::string> m_fileNames;
     uint32_t m_idx = 0;
     bool m_bStatus = true;

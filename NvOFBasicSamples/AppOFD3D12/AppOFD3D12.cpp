@@ -1,13 +1,28 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
+
 
 #include <fstream>
 #include <iostream>
@@ -89,7 +104,7 @@ void NvOFBatchExecute(NvOFObj &nvOpticalFlow,
     }
 }
 
-std::vector<void*> AllocateBuffer(NV_OF_BUFFER_DESCRIPTOR ofDesc, ID3D12Device* pDevice, int iNumBuffer, int iGridSize=1)
+std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> AllocateBuffer(NV_OF_BUFFER_DESCRIPTOR ofDesc, ID3D12Device* pDevice, int iNumBuffer, int iGridSize=1)
 {
     uint32_t widthAligned = 0;
     uint32_t heightAligned = 0;
@@ -109,10 +124,10 @@ std::vector<void*> AllocateBuffer(NV_OF_BUFFER_DESCRIPTOR ofDesc, ID3D12Device* 
     desc.Format = NvOFBufferFormatToDxgiFormat(ofDesc.bufferFormat);
     desc.SampleDesc.Count = 1;
     desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-    std::vector<void*> resourceList;
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> resourceList;
     for (int i = 0; i < iNumBuffer; i++)
     {
-        ID3D12Resource* pResource;
+        Microsoft::WRL::ComPtr<ID3D12Resource> pResource;
         D3D_API_CALL(pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE,
             &desc, D3D12_RESOURCE_STATE_COMMON, nullptr,
             IID_PPV_ARGS(&pResource)));
@@ -127,6 +142,18 @@ void CreateFence(ID3D12Device* pDevice, NV_OF_FENCE_POINT* fence, int count)
     {
         D3D_API_CALL(pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&(fence[i].fence))));
         fence[i].value = 0;
+    }
+}
+
+void ReleaseFence(NV_OF_FENCE_POINT* fence, int count)
+{
+    for (int i = 0; i < count; i++)
+    {
+        if (fence[i].fence)
+        {
+            fence[i].fence->Release();
+            fence[i].fence = nullptr;
+        }
     }
 }
 
@@ -186,14 +213,14 @@ void EstimateFlow(ID3D12Device *pDevice, std::string inputFileName,
     NV_OF_FENCE_POINT ofaFence;
     CreateFence(pDevice, &ofaFence, 1);
 
-    ID3D12CommandQueue* cmdQ;
-    ID3D12CommandAllocator* cmdAlloc;
-    ID3D12GraphicsCommandList* cmdList;
+    Microsoft::WRL::ComPtr<ID3D12CommandQueue> cmdQ;
+    Microsoft::WRL::ComPtr<ID3D12CommandAllocator> cmdAlloc;
+    Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList> cmdList;
 
     D3D12_COMMAND_QUEUE_DESC cmdQDesc = { D3D12_COMMAND_LIST_TYPE_DIRECT };
     D3D_API_CALL(pDevice->CreateCommandQueue(&cmdQDesc, IID_PPV_ARGS(&cmdQ)));
     D3D_API_CALL(pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&cmdAlloc)));
-    D3D_API_CALL(pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmdAlloc, nullptr, IID_PPV_ARGS(&cmdList)));
+    D3D_API_CALL(pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmdAlloc.Get(), nullptr, IID_PPV_ARGS(&cmdList)));
     cmdList->Close();
     
     NV_OF_BUFFER_DESCRIPTOR inputDesc;
@@ -201,12 +228,12 @@ void EstimateFlow(ID3D12Device *pDevice, std::string inputFileName,
     inputDesc.bufferUsage = NV_OF_BUFFER_USAGE_INPUT;
     inputDesc.width = width;
     inputDesc.height = height;
-    std::vector<void*> inputResourceList = AllocateBuffer(inputDesc, pDevice, NUM_INPUT_BUFFERS);
-    
-    for (auto pResource : inputResourceList)
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> inputResourceList = AllocateBuffer(inputDesc, pDevice, NUM_INPUT_BUFFERS);
+
+    for (auto& resource : inputResourceList)
     {
         ofaFence.value++;
-        inputBuffers.emplace_back(nvOpticalFlow->RegisterPreAllocBuffers(inputDesc, pResource,  &appFence, &ofaFence));
+        inputBuffers.emplace_back(nvOpticalFlow->RegisterPreAllocBuffers(inputDesc, resource.Get(), &appFence, &ofaFence));
     }
 
     NV_OF_BUFFER_DESCRIPTOR outputDesc;
@@ -216,15 +243,16 @@ void EstimateFlow(ID3D12Device *pDevice, std::string inputFileName,
     auto nOutHeight = (height + hwGridSize - 1) / hwGridSize;
     outputDesc.width = nOutWidth;
     outputDesc.height = nOutHeight;
-    std::vector<void*> outputResourceList= AllocateBuffer(outputDesc, pDevice, NUM_OUTPUT_BUFFERS, hwGridSize);
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> outputResourceList= AllocateBuffer(outputDesc, pDevice, NUM_OUTPUT_BUFFERS, hwGridSize);
 
-    for (auto pResource : outputResourceList)
+    for (auto& resource : outputResourceList)
     {
         ofaFence.value++;
-        outputBuffers.emplace_back(nvOpticalFlow->RegisterPreAllocBuffers(outputDesc, pResource, &appFence, &ofaFence));
+        outputBuffers.emplace_back(nvOpticalFlow->RegisterPreAllocBuffers(outputDesc, resource.Get(), &appFence, &ofaFence));
     }
 
     std::unique_ptr<NvOFUtils> nvOFUtils(new NvOFUtilsD3D12(pDevice, cmdList, NV_OF_MODE_OPTICALFLOW));
+    std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> upsampleResourceList;
     std::vector<NvOFBufferObj> upsampleBuffers;
     std::unique_ptr<NV_OF_FLOW_VECTOR[]> pOut;
     std::unique_ptr<NvOFFileWriter> flowFileWriter;
@@ -239,12 +267,12 @@ void EstimateFlow(ID3D12Device *pDevice, std::string inputFileName,
         upsampleDesc.bufferUsage = NV_OF_BUFFER_USAGE_OUTPUT;
         upsampleDesc.width = nOutWidth;
         upsampleDesc.height = nOutHeight;
-        std::vector<void*> upsampleResourceList = AllocateBuffer(upsampleDesc, pDevice, NUM_OUTPUT_BUFFERS);
+        upsampleResourceList = AllocateBuffer(upsampleDesc, pDevice, NUM_OUTPUT_BUFFERS);
 
-        for (auto pResource : upsampleResourceList)
+        for (auto& resource : upsampleResourceList)
         {
             ofaFence.value++;
-            upsampleBuffers.emplace_back(nvOpticalFlow->RegisterPreAllocBuffers(upsampleDesc, pResource, &appFence, &ofaFence));
+            upsampleBuffers.emplace_back(nvOpticalFlow->RegisterPreAllocBuffers(upsampleDesc, resource.Get(), &appFence, &ofaFence));
         }
 
         auto nOutSize = nOutWidth * nOutHeight;
@@ -282,7 +310,6 @@ void EstimateFlow(ID3D12Device *pDevice, std::string inputFileName,
     uint32_t                        frameCount = 0;
     bool                            lastSet = false;
     double                          executionTime = 0;
-    
 
     for (; (!dataLoader->IsDone() || curFrameIdx > 1); dataLoader->Next())
     {
@@ -311,13 +338,13 @@ void EstimateFlow(ID3D12Device *pDevice, std::string inputFileName,
                     cmdQ->Wait(ofaFence.fence, ofaFence.value);
                     for (uint32_t i = 0; i < curFrameIdx; i++)
                     {
-                        D3D_API_CALL(cmdList->Reset(cmdAlloc, nullptr));
+                        D3D_API_CALL(cmdList->Reset(cmdAlloc.Get(), nullptr));
 
                         nvOFUtils->Upsample(outputBuffers[i].get(), upsampleBuffers[i].get(), nScaleFactor);
                         appFence.value++;
                         
                         cmdList->Close();
-                        ID3D12CommandList * const ppCmdList[] = { cmdList };
+                        ID3D12CommandList * const ppCmdList[] = { cmdList.Get() };
                         cmdQ->ExecuteCommandLists(1, ppCmdList);
 
                         cmdQ->Signal(appFence.fence, appFence.value);
@@ -360,6 +387,9 @@ void EstimateFlow(ID3D12Device *pDevice, std::string inputFileName,
         std::cout << "Total Frames = " << frameCount << "\n";
         std::cout << "Time = " << executionTime << " s, NvOF FPS = " << fps << "\n";
     }
+
+    ReleaseFence(&appFence, 1);
+    ReleaseFence(&ofaFence, 1);
 }
 
 int main(int argc, char** argv)
@@ -378,9 +408,6 @@ int main(int argc, char** argv)
         { "medium", NV_OF_PERF_LEVEL_MEDIUM },
         { "fast", NV_OF_PERF_LEVEL_FAST } };
 
-    Microsoft::WRL::ComPtr<ID3D12Device> pDevice;
-    
-    Microsoft::WRL::ComPtr<ID3D12Debug> debugController;
     try
     {
         NvOFCmdParser cmdParser;
@@ -424,19 +451,22 @@ int main(int argc, char** argv)
 
         Microsoft::WRL::ComPtr<IDXGIFactory1> pFactory;
         Microsoft::WRL::ComPtr<IDXGIAdapter> pAdapter;
-        D3D_API_CALL(CreateDXGIFactory1(__uuidof(IDXGIFactory1), (void **)&pFactory));
+        D3D_API_CALL(CreateDXGIFactory1(IID_PPV_ARGS(&pFactory)));
         D3D_API_CALL(pFactory->EnumAdapters(gpuId, &pAdapter));
 
 #if defined(_DEBUG)
         // Enable the debug layer (requires the Graphics Tools "optional feature").
         // NOTE: Enabling the debug layer after device creation will invalidate the active device.
         {
+            Microsoft::WRL::ComPtr<ID3D12Debug> debugController;
             if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
             {
                 debugController->EnableDebugLayer();
             }
         }
 #endif
+
+        Microsoft::WRL::ComPtr<ID3D12Device> pDevice;
         D3D_API_CALL(D3D12CreateDevice(pAdapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&pDevice)));
         DXGI_ADAPTER_DESC adapterDesc;
         pAdapter->GetDesc(&adapterDesc);

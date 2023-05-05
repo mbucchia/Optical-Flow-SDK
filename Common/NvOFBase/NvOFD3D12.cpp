@@ -1,12 +1,26 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
 
 
@@ -61,6 +75,7 @@ void CreateBufferParamsD3D12(D3D12_HEAP_PROPERTIES* pHeapProps, D3D12_RESOURCE_D
 
 NvOFD3D12API::NvOFD3D12API(ID3D12Device* device)
     : m_device(device)
+    , m_hOF(nullptr)
 {
     typedef NV_OF_STATUS(NVOFAPI *PFNNvOFAPICreateInstanceD3D12)(uint32_t apiVer, NV_OF_D3D12_API_FUNCTION_LIST  *d3d11OF);
     PFNNvOFAPICreateInstanceD3D12 NvOFAPICreateInstanceD3D12 = (PFNNvOFAPICreateInstanceD3D12)GetProcAddress(m_hModule, "NvOFAPICreateInstanceD3D12");
@@ -75,20 +90,18 @@ NvOFD3D12API::NvOFD3D12API(ID3D12Device* device)
     {
         NVOF_THROW_ERROR("Cannot fetch function list", status);
     }
-    m_ofAPI->nvCreateOpticalFlowD3D12(device, &m_hOF);
+    status = m_ofAPI->nvCreateOpticalFlowD3D12(device, &m_hOF);
+    if (status != NV_OF_SUCCESS || m_hOF == nullptr)
+    {
+        NVOF_THROW_ERROR("Cannot create D3D12 optical flow device", status);
+    }
 
-    ID3D12CommandAllocator* cmdAlloc;
-    ID3D12GraphicsCommandList* cmdList;
-    ID3D12CommandQueue* cmdQ;
     D3D12_COMMAND_QUEUE_DESC cmdQDesc = { D3D12_COMMAND_LIST_TYPE_DIRECT };
 
-    D3D_API_CALL(device->CreateCommandQueue(&cmdQDesc, IID_PPV_ARGS(&cmdQ)));
-    m_pCmdQ = cmdQ;
-    D3D_API_CALL(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&cmdAlloc)));
-    m_pCmdAlloc = cmdAlloc;
-    D3D_API_CALL(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, cmdAlloc, nullptr, IID_PPV_ARGS(&cmdList)));
-    m_pCmdList = cmdList;
-    cmdList->Close();
+    D3D_API_CALL(device->CreateCommandQueue(&cmdQDesc, IID_PPV_ARGS(&m_pCmdQ)));
+    D3D_API_CALL(device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_pCmdAlloc)));
+    D3D_API_CALL(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_pCmdAlloc.Get(), nullptr, IID_PPV_ARGS(&m_pCmdList)));
+    m_pCmdList->Close();
 }
 
 NvOFD3D12API::~NvOFD3D12API()
@@ -127,7 +140,7 @@ NvOFD3D12::NvOFD3D12(ID3D12Device* d3dDevice, uint32_t nWidth, uint32_t nHeight,
 
     for (uint32_t i = 0; i < formatCount; ++i)
     {
-        if (m_inputBufferDesc.bufferFormat == DXGIFormatToNvOFBufferFormat(pDxgiFormat[i]))
+        if (m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].bufferFormat == DXGIFormatToNvOFBufferFormat(pDxgiFormat[i]))
         {
             bInputFormatSupported = true;
         }
@@ -301,14 +314,11 @@ RWPolicyDeviceAndHost::RWPolicyDeviceAndHost(NvOFD3D12API* nvofD3D, NV_OF_BUFFER
         size -= (m_layout[numSubresources - 1].Footprint.RowPitch - (uint32_t)m_rowSizeInBytes[numSubresources - 1]);
     }
    AllocateStagingBuffer(nvofBufDesc, nvofD3D->GetDevice().Get(), pGPUResource);
-   ID3D12Fence* fence;
-   D3D_API_CALL(nvofD3D->GetDevice()->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence)));
-   m_internalFence = fence;
+   D3D_API_CALL(nvofD3D->GetDevice()->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_internalFence)));
 }
 
 void RWPolicyDeviceAndHost::AllocateStagingBuffer(NV_OF_BUFFER_DESCRIPTOR ofBufDesc, ID3D12Device* pDevice, ID3D12Resource* pGPUResource)
 {
-    ID3D12Resource* pStagingResource;
     D3D12_RESOURCE_STATES state = {};
     D3D12_HEAP_PROPERTIES heapProps;
     D3D12_RESOURCE_DESC desc;
@@ -341,8 +351,7 @@ void RWPolicyDeviceAndHost::AllocateStagingBuffer(NV_OF_BUFFER_DESCRIPTOR ofBufD
     desc.SampleDesc.Count = 1;
     desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     D3D_API_CALL(pDevice->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE,
-        &desc, state, nullptr, IID_PPV_ARGS(&pStagingResource)));
-    m_stagingResource = pStagingResource;
+        &desc, state, nullptr, IID_PPV_ARGS(&m_stagingResource)));
 }
 
 void RWPolicyDeviceAndHost::UploadData(const void* pSysMem, NvOFD3D12API* nvof, void* inputFencePoint, void* outputFencePoint)

@@ -1,13 +1,28 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
+
 
 #include <fstream>
 #include <iostream>
@@ -24,6 +39,7 @@
 void NvOFBatchExecute(NvOFObj &nvOpticalFlow,
     std::vector<NvOFBufferObj> &inputBuffers,
     std::vector<NvOFBufferObj> &outputBuffers,
+    std::vector<NvOFBufferObj> &hintBuffers,
     uint32_t batchSize,
     double &executionTime,
     bool measureFPS,
@@ -45,7 +61,8 @@ void NvOFBatchExecute(NvOFObj &nvOpticalFlow,
         {
             nvOpticalFlow->Execute(inputBuffers[i].get(),
                 inputBuffers[i + 1].get(),
-                outputBuffers[i].get());
+                outputBuffers[i].get(),
+                !hintBuffers.empty() ? hintBuffers[i].get() : nullptr);
         }
         CUDA_DRVAPI_CALL(cuStreamSynchronize(outputStream));
         executionTime += nvStopWatch.Stop();
@@ -57,7 +74,7 @@ void NvOFBatchExecute(NvOFObj &nvOpticalFlow,
             nvOpticalFlow->Execute(inputBuffers[i].get(),
                 inputBuffers[i + 1].get(),
                 outputBuffers[i].get(), 
-                nullptr,
+                !hintBuffers.empty() ? hintBuffers[i].get() : nullptr,
                 nullptr,
                 numROIs,
                 ROIData);
@@ -141,11 +158,13 @@ void EstimateFlow(CUcontext cuContext,
     CUstream   outputStream,
     std::string inputFileName,
     std::string outputFileBaseName,
+    std::string hintFileName,
     std::string RoiFileName,
     NV_OF_CUDA_BUFFER_TYPE inputBufferType, 
     NV_OF_CUDA_BUFFER_TYPE outputBufferType,
     NV_OF_PERF_LEVEL perfPreset,
     uint32_t gridSize,
+    uint32_t hintGridSize,
     bool saveFlowAsImage,
     bool measureFPS)
 {
@@ -159,6 +178,19 @@ void EstimateFlow(CUcontext cuContext,
     memset(&ROIData, 0, sizeof(ROIData));
     bool bEnableRoi = false;
     bool dumpOfOutput = (!outputFileBaseName.empty());
+    bool enableExternalHints = (!hintFileName.empty());
+    std::unique_ptr<NvOFDataLoader> dataLoaderFlo;
+    if (enableExternalHints)
+    {
+        dataLoaderFlo = CreateDataloader(hintFileName);
+        uint32_t hintWidth = dataLoaderFlo->GetWidth();
+        uint32_t hintHeight = dataLoaderFlo->GetHeight();
+        if ((hintWidth != (width + hintGridSize - 1) / hintGridSize) ||
+            (hintHeight != (height + hintGridSize - 1) / hintGridSize))
+        {
+            throw std::runtime_error("Invalid hint file");
+        }
+    }
 
     NvOFObj nvOpticalFlow = NvOFCuda::Create(cuContext, width, height, dataLoader->GetBufferFormat(),
         inputBufferType, outputBufferType, NV_OF_MODE_OPTICALFLOW, perfPreset, inputStream, outputStream);
@@ -178,6 +210,10 @@ void EstimateFlow(CUcontext cuContext,
     else
     {
         hwGridSize = gridSize;
+    }
+    if (enableExternalHints && (hintGridSize < hwGridSize))
+    {
+        throw std::runtime_error("Hint grid size must be same or bigger than the output grid size");
     }
     if (!RoiFileName.empty())
     {
@@ -200,7 +236,7 @@ void EstimateFlow(CUcontext cuContext,
         }
     }
 
-    nvOpticalFlow->Init(hwGridSize, bEnableRoi);
+    nvOpticalFlow->Init(hwGridSize, hintGridSize, enableExternalHints, bEnableRoi);
 
     const uint32_t NUM_INPUT_BUFFERS = 16;
     const uint32_t NUM_OUTPUT_BUFFERS = NUM_INPUT_BUFFERS - 1;
@@ -208,6 +244,11 @@ void EstimateFlow(CUcontext cuContext,
     std::vector<NvOFBufferObj> outputBuffers;
     inputBuffers = nvOpticalFlow->CreateBuffers(NV_OF_BUFFER_USAGE_INPUT, NUM_INPUT_BUFFERS);
     outputBuffers = nvOpticalFlow->CreateBuffers(NV_OF_BUFFER_USAGE_OUTPUT, NUM_OUTPUT_BUFFERS);
+    std::vector<NvOFBufferObj> exthintBuffers;
+    if (enableExternalHints)
+    {
+        exthintBuffers = nvOpticalFlow->CreateBuffers(NV_OF_BUFFER_USAGE_HINT, NUM_OUTPUT_BUFFERS);
+    }
     std::unique_ptr<NvOFUtils> nvOFUtils(new NvOFUtilsCuda(NV_OF_MODE_OPTICALFLOW));
     std::vector<NvOFBufferObj> upsampleBuffers;
     std::unique_ptr<NV_OF_FLOW_VECTOR[]> pOut;
@@ -259,6 +300,18 @@ void EstimateFlow(CUcontext cuContext,
         if (!dataLoader->IsDone())
         {
             inputBuffers[curFrameIdx]->UploadData(dataLoader->CurrentItem());
+            if (enableExternalHints && (curFrameIdx > 0))
+            {
+                if (!dataLoaderFlo->IsDone())
+                {
+                    exthintBuffers[curFrameIdx - 1]->UploadData(dataLoaderFlo->CurrentItem());
+                    dataLoaderFlo->Next();
+                }
+                else
+                {
+                    throw std::runtime_error("no hint file!");
+                }
+            }
         }
         else
         {
@@ -271,7 +324,7 @@ void EstimateFlow(CUcontext cuContext,
 
         if (curFrameIdx == NUM_INPUT_BUFFERS-1 || lastSet)
         {
-            NvOFBatchExecute(nvOpticalFlow, inputBuffers, outputBuffers, curFrameIdx, executionTime, measureFPS,
+            NvOFBatchExecute(nvOpticalFlow, inputBuffers, outputBuffers, exthintBuffers, curFrameIdx, executionTime, measureFPS,
                              inputStream,outputStream, numROIs, ROIData);
             if (dumpOfOutput)
             {
@@ -323,11 +376,13 @@ int main(int argc, char **argv)
 {
     std::string inputFileName;
     std::string outputFileBaseName;
+    std::string hintFileName;
     std::string ROIFileName;
     std::string preset = "medium";
     std::string inputBufferType = "cudaArray";
     std::string outputBufferType = "cudaArray";
     int gridSize = 1;
+    int hintGridSize = 1;
     bool visualFlow = 0;
     int gpuId = 0;
     bool showHelp = 0;
@@ -359,6 +414,8 @@ int main(int argc, char **argv)
                                                      "inputDir" DIR_SEP "input_wxh.yuv ]");
         cmdParser.AddOptions("output", outputFileBaseName, "Output file base name "
                                                            "[ e.g. outputDir" DIR_SEP "outFilename ]");
+        cmdParser.AddOptions("hint", hintFileName, "Hint filename "
+                                                   "[ e.g hintDir" DIR_SEP "hint*.flo ]");
         cmdParser.AddOptions("RoiConfig", ROIFileName, "Region of Interest filename ");
         cmdParser.AddOptions("gpuIndex", gpuId, "cuda device index");
         cmdParser.AddOptions("preset", preset, "perf preset for OF algo [ options : slow, medium, fast ]");
@@ -367,6 +424,7 @@ int main(int argc, char **argv)
         cmdParser.AddOptions("outputBufferType", outputBufferType, "output cuda buffer type [options : cudaArray cudaDevicePtr]");
         cmdParser.AddOptions("useCudaStream", useCudaStream, "Use cuda stream for input and output processing");
         cmdParser.AddOptions("gridSize", gridSize, "Block size per motion vector");
+        cmdParser.AddOptions("hintGridSize", hintGridSize, "Block size per hint motion vector");
         cmdParser.AddOptions("measureFPS", measureFPS, "Measure performance(frames per second). When this option is set it is not mandatory to specify --output option,"
                              " output is generated only if --output option is specified");
         NVOF_ARGS_PARSE(cmdParser, argc, (const char**)argv);
@@ -442,11 +500,13 @@ int main(int argc, char **argv)
             outputStream,
             inputFileName,
             outputFileBaseName,
+            hintFileName,
             ROIFileName,
             inputBufferTypeEnum,
             outputBufferTypeEnum,
             perfPreset,
             gridSize,
+            hintGridSize,
             !!visualFlow,
             !!measureFPS);
 

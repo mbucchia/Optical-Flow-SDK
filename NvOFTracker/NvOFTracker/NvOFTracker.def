@@ -1,0 +1,4 @@
+EXPORTS
+NvOFTCreate
+NvOFTProcess
+NvOFTDestroy

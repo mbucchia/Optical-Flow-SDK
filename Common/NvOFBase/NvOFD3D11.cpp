@@ -1,12 +1,26 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
 
 
@@ -15,6 +29,7 @@
 
 NvOFD3D11API::NvOFD3D11API(ID3D11DeviceContext* devContext)
     : m_deviceContext(devContext)
+    , m_hOF(nullptr)
 {
     typedef NV_OF_STATUS(NVOFAPI *PFNNvOFAPICreateInstanceD3D11)(uint32_t apiVer, NV_OF_D3D11_API_FUNCTION_LIST  *d3d11OF);
     PFNNvOFAPICreateInstanceD3D11 NvOFAPICreateInstanceD3D11 = (PFNNvOFAPICreateInstanceD3D11)GetProcAddress(m_hModule, "NvOFAPICreateInstanceD3D11");
@@ -27,7 +42,11 @@ NvOFD3D11API::NvOFD3D11API(ID3D11DeviceContext* devContext)
     m_deviceContext->GetDevice(device.GetAddressOf());
     m_ofAPI.reset(new NV_OF_D3D11_API_FUNCTION_LIST());
     NvOFAPICreateInstanceD3D11(NV_OF_API_VERSION, m_ofAPI.get());
-    m_ofAPI->nvCreateOpticalFlowD3D11(device.Get(), m_deviceContext.Get(), &m_hOF);
+    NV_OF_STATUS status = m_ofAPI->nvCreateOpticalFlowD3D11(device.Get(), m_deviceContext.Get(), &m_hOF);
+    if (status != NV_OF_SUCCESS || m_hOF == nullptr)
+    {
+        NVOF_THROW_ERROR("Cannot create D3D11 optical flow device", status);
+    }
 }
 NvOFD3D11API::~NvOFD3D11API()
 {
@@ -68,7 +87,7 @@ NvOFD3D11::NvOFD3D11(ID3D11Device* d3dDevice, ID3D11DeviceContext* devContext, u
 
     for (uint32_t i = 0; i < formatCount; ++i)
     {
-        if (m_inputBufferDesc.bufferFormat == DXGIFormatToNvOFBufferFormat(pDxgiFormat[i]))
+        if (m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].bufferFormat == DXGIFormatToNvOFBufferFormat(pDxgiFormat[i]))
         {
             bInputFormatSupported = true;
         }

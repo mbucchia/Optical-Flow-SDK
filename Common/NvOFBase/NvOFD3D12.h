@@ -1,12 +1,26 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
 
 
@@ -32,11 +46,6 @@ public:
         return  m_ofAPI.get();
     }
 
-    ID3D12Device* GetD3D12Device()
-    {
-        return m_device.Get();
-    }
-
     NvOFHandle GetHandle() { return m_hOF; }
     Microsoft::WRL::ComPtr<ID3D12Device> GetDevice() { return m_device.Get(); }
     ID3D12CommandAllocator*              GetCmdAlloc() { return m_pCmdAlloc.Get(); }
@@ -48,8 +57,8 @@ private:
     Microsoft::WRL::ComPtr<ID3D12CommandAllocator>              m_pCmdAlloc;
     Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList>           m_pCmdList;
     Microsoft::WRL::ComPtr<ID3D12CommandQueue>                  m_pCmdQ;
-    std::unique_ptr<NV_OF_D3D12_API_FUNCTION_LIST> m_ofAPI;
-    Microsoft::WRL::ComPtr<ID3D12Device> m_device;
+    std::unique_ptr<NV_OF_D3D12_API_FUNCTION_LIST>              m_ofAPI;
+    Microsoft::WRL::ComPtr<ID3D12Device>                        m_device;
 };
 
 template<typename RWPolicy>

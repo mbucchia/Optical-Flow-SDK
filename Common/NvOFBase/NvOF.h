@@ -1,14 +1,27 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
-
 
 #pragma once
 #include <vector>
@@ -31,7 +44,7 @@ class NvOFException : public std::exception
 public:
     NvOFException(const std::string& errorStr, const NV_OF_STATUS errorCode)
         : m_errorString(errorStr), m_errorCode(errorCode) {}
-    virtual ~NvOFException() throw() {}
+    virtual ~NvOFException() {}
     virtual const char* what() const throw() { return m_errorString.c_str(); }
     NV_OF_STATUS getErrorCode() const { return m_errorCode; }
     const std::string& getErrorString() const { return m_errorString; }
@@ -145,7 +158,7 @@ public:
     {
         LoadNvOFAPI();
     }
-    virtual ~NvOFAPI() {}
+    virtual ~NvOFAPI();
 protected:
     HMODULE m_hModule;
     std::mutex m_lock;
@@ -206,7 +219,7 @@ protected:
         NV_OF_MODE eMode = NV_OF_MODE_OPTICALFLOW,
         NV_OF_PERF_LEVEL preset = NV_OF_PERF_LEVEL_SLOW);
 public:
-    void Init(uint32_t nOutGridSize, bool bEnableRoi = false);
+    void Init(uint32_t nOutGridSize, uint32_t nHintGridSize = NV_OF_HINT_VECTOR_GRID_SIZE_UNDEFINED, bool bEnableExtHints = false, bool bEnableRoi = false);
 
     /*
      * Check for the grid size support by hw
@@ -264,16 +277,8 @@ protected:
     NV_OF_PERF_LEVEL m_ePreset;
     NV_OF_MODE m_ofMode;
     NV_OF_BOOL m_bEnableRoi;
-    NV_OF_BUFFER_DESCRIPTOR m_inputBufferDesc;
-    NV_OF_BUFFER_DESCRIPTOR m_outputBufferDesc;
-    NV_OF_BUFFER_DESCRIPTOR m_costBufferDesc;
-    NV_OF_BUFFER_DESCRIPTOR m_hintBufferDesc;
-
-    uint32_t m_outputElementSize;
-    uint32_t m_inputElementSize;
-    uint32_t m_costBufElementSize;
-    uint32_t m_hintBufElementSize;
-
+    NV_OF_BUFFER_DESCRIPTOR m_BufferDesc[NV_OF_BUFFER_USAGE_MAX]{};
+    uint32_t m_ElementSize[NV_OF_BUFFER_USAGE_MAX]{};
     NV_OF_INIT_PARAMS m_initParams;
 };
 

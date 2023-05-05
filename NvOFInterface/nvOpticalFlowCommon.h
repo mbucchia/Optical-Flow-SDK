@@ -1,7 +1,7 @@
 /*
 * This copyright notice applies to this header file only:
 *
-* Copyright (c) 2021 NVIDIA Corporation
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
 * Permission is hereby granted, free of charge, to any person
 * obtaining a copy of this software and associated documentation
@@ -28,10 +28,7 @@
 * \file nvOpticalFlowCommon.h
 *   NVIDIA GPUs - Turing and above contains a hardware-based optical flow engine
 *   which provides fully-accelerated hardware-based optical flow and stereo estimation.
-*   nvOpticalFlowCommon.h provides enums, structure definitions and function prototypes which are common across different devices,
-*   nvOpticalFlowCommon.h uses #pragma directives to pack structure members with one byte alignment.
-* \date 2021
-*  nvOpticalFlowCommon.h provides common enums, structure definitions and function prototypes.
+*   nvOpticalFlowCommon.h provides enums, structure definitions and function prototypes which are common across different devices.
 */
 
 #ifndef _NV_OPTICALFLOW_COMMON_H_
@@ -56,7 +53,7 @@ typedef unsigned short      uint16_t;
 #else
 #define NVOFAPI
 #endif
-#define NV_OF_API_MAJOR_VERSION 3
+#define NV_OF_API_MAJOR_VERSION 5
 #define NV_OF_API_MINOR_VERSION 0
 #define NV_OF_API_VERSION  (uint16_t)((NV_OF_API_MAJOR_VERSION << 4) | NV_OF_API_MINOR_VERSION)
 #define MIN_ERROR_STRING_SIZE 80
@@ -173,6 +170,7 @@ typedef enum _NV_OF_CAPS
                                                     0: ROIs cannot be specified.
                                                     1: One or more ROIs can be specified. */
     NV_OF_CAPS_SUPPORT_ROI_MAX_NUM,              /**< Indicates maximum number of ROIs supported. */
+    NV_OF_CAPS_SUPPORT_STEREO,                   /**< Indicates ::NV_OF_MODE_STEREODISPARITY mode support. */
     NV_OF_CAPS_SUPPORT_MAX
 } NV_OF_CAPS;
 
@@ -256,7 +254,7 @@ typedef enum _NV_OF_BUFFER_FORMAT
 {
     NV_OF_BUFFER_FORMAT_UNDEFINED,
     NV_OF_BUFFER_FORMAT_GRAYSCALE8,               /**< Input buffer format with 8 bit planar format */
-    NV_OF_BUFFER_FORMAT_NV12,                     /**< Input buffer format with 8 bit plannar, UV interleaved */
+    NV_OF_BUFFER_FORMAT_NV12,                     /**< Input buffer format with 8 bit planar, UV interleaved */
     NV_OF_BUFFER_FORMAT_ABGR8,                    /**< Input buffer format with 8 bit packed A8B8G8R8 */
     NV_OF_BUFFER_FORMAT_SHORT,                    /**< Output or hint buffer format for stereo disparity */
     NV_OF_BUFFER_FORMAT_SHORT2,                   /**< Output or hint buffer format for optical flow vector */
@@ -339,9 +337,11 @@ typedef struct _NV_OF_INIT_PARAMS
     NV_OF_MODE                      mode;                             /**< [in]: Operating mode for NVOF. Set to a value defined by enum ::NV_OF_MODE. */
     NV_OF_PERF_LEVEL                perfLevel;                        /**< [in]: Specifies perf level. */
     NV_OF_BOOL                      enableExternalHints;              /**< [in]: Set to 1 to enable external hints for optical flow session. */
-    NV_OF_BOOL                      enableOutputCost;                 /**< [in]: Set to 1 to enable output cost calculation for optical flow session. */
+    NV_OF_BOOL                      enableOutputCost;                 /**< [in]: Set to 1 to enable output cost calculation for optical flow session.
+                                                                                 Cost represents confidence of the flow vector.  Higher cost value implies the flow vector
+                                                                                 to be less accurate and vice-versa. */
     NvOFPrivDataHandle              hPrivData;                        /**< [in]: Optical flow private data. It is reserved field and should be set to NULL. */
-    NV_OF_STEREO_DISPARITY_RANGE    disparityRange;                   /**< [in]: Specifies maximum disparity range. 
+    NV_OF_STEREO_DISPARITY_RANGE    disparityRange;                   /**< [in]: Specifies maximum stereo disparity range. 
                                                                                  Set to NV_OF_STEREO_DISPARITY_RANGE_UNDEFINED for Turing GPUs. */
     NV_OF_BOOL                      enableRoi;                        /**< [in]: Set to 1 to enable estimation of optical flow/stereo for roi. */
     NV_OF_PRED_DIRECTION            predDirection;                    /**< [in]: Prediction direction. When ::NV_OF_INIT_PARAMS::mode is ::NV_OF_MODE_OPTICALFLOW,
@@ -363,7 +363,7 @@ typedef struct _NV_OF_BUFFER_DESCRIPTOR
     uint32_t                        width;                           /**< [in]: Buffer width. */
     uint32_t                        height;                          /**< [in]: Buffer height. */
     NV_OF_BUFFER_USAGE              bufferUsage;                     /**< [in]: To specify buffer usage type.
-                                                                     ::NV_OF_BUFFER_USAGE_OUTPUT buffer usage type accepts ::NV_OF_BUFFER_DESCRIPTOR::width,
+                                                                     ::NV_OF_BUFFER_USAGE_OUTPUT buffer usage type accepts ::NV_OF_CREATE_BUFFER::width,
                                                                      ::NV_OF_BUFFER_DESCRIPTOR::height in ::NV_OF_INIT_PARAMS::outGridSize units.
                                                                      ::NV_OF_BUFFER_USAGE_HINT buffer usage type accepts ::NV_OF_BUFFER_DESCRIPTOR::width,
                                                                      ::NV_OF_BUFFER_DESCRIPTOR::height in ::NV_OF_INIT_PARAMS::hintGridSize units. */
@@ -383,13 +383,13 @@ typedef struct _NV_OF_BUFFER_DESCRIPTOR
 *   6. Whole ROI region should be inside of the image
 * Optical flow/stereo disparity vectors out side of ROI are invalid and should not be used.
 */
-struct NV_OF_ROI_RECT
+typedef struct _NV_OF_ROI_RECT
 {
     uint32_t                        start_x;                         /**< [in]: ROI start position in x-direction. */
     uint32_t                        start_y;                         /**< [in]: ROI start position in y-direction. */
     uint32_t                        width;                           /**< [in]: Width of ROI. */
     uint32_t                        height;                          /**< [in]: Height of ROI. */
-};
+} NV_OF_ROI_RECT;
 
 /**
 * \struct NV_OF_EXECUTE_INPUT_PARAMS

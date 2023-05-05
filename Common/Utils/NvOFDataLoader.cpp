@@ -1,12 +1,26 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
 
 
@@ -21,6 +35,7 @@
 #endif
 #include <regex>
 #include "NvOFDataLoader.h"
+#include "NvOFUtils.h"
 
 static std::string generateRegexPattern(const std::string& imageNamePattern)
 {
@@ -437,6 +452,111 @@ void NvOFDataLoaderYUV420::ReadYUV()
     convertToNV12(m_pFrameData.get(), m_pNv12Data.get());
 }
 
+NvOFDataLoaderFlo::NvOFDataLoaderFlo(const char* szFileName, float precision) :
+    m_width(0), m_height(0), m_idx(0), m_precision(precision)
+{
+    glob(szFileName, m_fileNames);
+    if (m_fileNames.empty())
+    {
+        std::ostringstream err;
+        err << "Invalid hint file format: " << szFileName << std::endl;
+        throw std::runtime_error(err.str());
+    }
+
+    std::ifstream fpInput(m_fileNames[0], std::ios::in | std::ios::binary);
+    char header[4];
+    fpInput.read(header, 4);
+    if (strncmp(header, TAG_STRING, 4))
+    {
+        throw std::runtime_error("Invalid flow file format");
+    }
+    fpInput.read((char*)(&m_width), sizeof(uint32_t));
+    fpInput.read((char*)(&m_height), sizeof(uint32_t));
+    fpInput.seekg(0, fpInput.end);
+    auto fileSize = fpInput.tellg();
+    fpInput.seekg(0, fpInput.beg);
+    fpInput.close();
+
+    auto frameSize = m_width * m_height * 2 * sizeof(float);
+    if (frameSize != (static_cast<uint32_t>(fileSize)-HEADER_SIZE))
+    {
+        throw std::runtime_error("Invalid flow file format");
+    }
+
+    m_pFlowFloat.reset(new float[2 * m_width * m_height]);
+    m_pFlowFixedPoint.reset(new NV_OF_FLOW_VECTOR[m_width * m_height]); // S10.5 fixed point format
+
+    ReadFlow(m_fileNames[m_idx]);
+}
+
+void NvOFDataLoaderFlo::Next()
+{
+    m_idx++;
+    if (m_idx < m_fileNames.size())
+    {
+        ReadFlow(m_fileNames[m_idx]);
+    }
+    else
+    {
+        m_bStatus = false;
+    }
+}
+
+void NvOFDataLoaderFlo::convertFloat2Fixed(const float* pFlowFloat, NV_OF_FLOW_VECTOR* pFlowFixed)
+{
+    for (uint32_t y = 0; y < m_height; ++y)
+    {
+        for (uint32_t x = 0; x < m_width; ++x)
+        {
+            pFlowFixed[y * m_width + x].flowx = static_cast<uint16_t>(pFlowFloat[(y * 2 * m_width) + 2 * x] * m_precision);
+            pFlowFixed[y * m_width + x].flowy = static_cast<uint16_t>(pFlowFloat[(y * 2 * m_width) + 2 * x + 1] * m_precision);
+        }
+    }
+}
+
+void NvOFDataLoaderFlo::ReadFlow(const std::string& fileName)
+{
+    try
+    {
+        std::ifstream fpInput(fileName, std::ios::in | std::ios::binary);
+        char header[4];
+        uint32_t width, height;
+        fpInput.read(header, 4);
+        if (strncmp(header, "PIEH", 4))
+        {
+            throw std::runtime_error("Invalid flow file format");
+        }
+        fpInput.read((char*)(&width), sizeof(uint32_t));
+        fpInput.read((char*)(&height), sizeof(uint32_t));
+        if (m_width != width)
+        {
+            std::ostringstream err;
+            err << fileName << " width (" << width << ") is not same as last file's width (" << m_width << ")" << std::endl;
+            throw std::invalid_argument(err.str());
+        }
+        if (m_height != height)
+        {
+            std::ostringstream err;
+            err << fileName << " height (" << height << ") is not same as last file's height (" << m_height << ")" << std::endl;
+            throw std::invalid_argument(err.str());
+        }
+        uint32_t size = m_width * m_height * 2 * sizeof(float);
+        std::streamsize nRead = fpInput.read(reinterpret_cast<char*>(m_pFlowFloat.get()), size).gcount();
+        if (size != nRead)
+        {
+            std::ostringstream err;
+            err << fileName << "size (" << nRead + HEADER_SIZE << ") is not same as last file size (" << size + HEADER_SIZE << ")" << std::endl;
+            throw std::invalid_argument(err.str());
+        }
+        convertFloat2Fixed(m_pFlowFloat.get(), m_pFlowFixedPoint.get());
+    }
+    catch (...)
+    {
+        throw;
+    }
+}
+
+
 std::unique_ptr<NvOFDataLoader> CreateDataloader(const std::string& dataPath)
 {
     std::unique_ptr<NvOFDataLoader> dataLoader;
@@ -458,6 +578,10 @@ std::unique_ptr<NvOFDataLoader> CreateDataloader(const std::string& dataPath)
     else if (ext == "yuv")
     {
         dataLoader.reset(new NvOFDataLoaderYUV420(dataPath.c_str()));
+    }
+    else if (ext == "flo")
+    {
+        dataLoader.reset(new NvOFDataLoaderFlo(dataPath.c_str()));
     }
     else
     {

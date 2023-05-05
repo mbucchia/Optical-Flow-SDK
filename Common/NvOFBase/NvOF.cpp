@@ -1,12 +1,26 @@
 /*
-* Copyright 2018-2021 NVIDIA Corporation.  All rights reserved.
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
-* Please refer to the NVIDIA end user license agreement (EULA) associated
-* with this source code for terms and conditions that govern your use of
-* this software. Any use, reproduction, disclosure, or distribution of
-* this software and related documentation outside the terms of the EULA
-* is strictly prohibited.
+* Permission is hereby granted, free of charge, to any person
+* obtaining a copy of this software and associated documentation
+* files (the "Software"), to deal in the Software without
+* restriction, including without limitation the rights to use,
+* copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the software, and to permit persons to whom the
+* software is furnished to do so, subject to the following
+* conditions:
 *
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+* OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+* HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+* WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+* OTHER DEALINGS IN THE SOFTWARE.
 */
 
 
@@ -22,20 +36,20 @@ NvOF::NvOF(uint32_t nWidth, uint32_t nHeight, NV_OF_BUFFER_FORMAT eInBufFmt, NV_
     NV_OF_PERF_LEVEL preset) :
     m_ofMode(eMode),
     m_nOutGridSize(NV_OF_OUTPUT_VECTOR_GRID_SIZE_MAX),
+    m_nHintGridSize(NV_OF_HINT_VECTOR_GRID_SIZE_UNDEFINED),
     m_ePreset(preset)
 {
     m_bEnableRoi = NV_OF_FALSE;
-    m_inputElementSize = 1;
+    m_ElementSize[NV_OF_BUFFER_USAGE_INPUT] = 1;
     if (eInBufFmt == NV_OF_BUFFER_FORMAT_ABGR8)
-        m_inputElementSize = 4;
+        m_ElementSize[NV_OF_BUFFER_USAGE_INPUT] = 4;
 
 
-    memset(&m_inputBufferDesc, 0, sizeof(m_inputBufferDesc));
-    m_inputBufferDesc.width = nWidth;
-    m_inputBufferDesc.height = nHeight;
-    m_inputBufferDesc.bufferFormat = eInBufFmt;
-    m_inputBufferDesc.bufferUsage = NV_OF_BUFFER_USAGE_INPUT;
-
+    memset(&m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT], 0, sizeof(NV_OF_BUFFER_DESCRIPTOR));
+    m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].width = nWidth;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].height = nHeight;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].bufferFormat = eInBufFmt;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].bufferUsage = NV_OF_BUFFER_USAGE_INPUT;
 }
 
 bool NvOF::CheckGridSize(uint32_t nOutGridSize)
@@ -89,55 +103,62 @@ bool NvOF::GetNextMinGridSize(uint32_t nOutGridSize, uint32_t& nextMinOutGridSiz
     return (nextMinOutGridSize >= NV_OF_OUTPUT_VECTOR_GRID_SIZE_MAX) ? false : true;
 }
 
-void NvOF::Init(uint32_t nOutGridSize, bool bEnableRoi)
+void NvOF::Init(uint32_t nOutGridSize, uint32_t nHintGridSize, bool bEnableHints, bool bEnableRoi)
 {
     m_nOutGridSize = nOutGridSize;
     m_bEnableRoi = (NV_OF_BOOL)bEnableRoi;
 
-    auto nOutWidth = (m_inputBufferDesc.width + m_nOutGridSize - 1) / m_nOutGridSize;
-    auto nOutHeight = (m_inputBufferDesc.height + m_nOutGridSize - 1) / m_nOutGridSize;
+    auto nOutWidth = (m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].width + m_nOutGridSize - 1) / m_nOutGridSize;
+    auto nOutHeight = (m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].height + m_nOutGridSize - 1) / m_nOutGridSize;
 
     auto outBufFmt = NV_OF_BUFFER_FORMAT_SHORT2;
     if (m_ofMode == NV_OF_MODE_OPTICALFLOW)
     {
         outBufFmt = NV_OF_BUFFER_FORMAT_SHORT2;
-        m_outputElementSize = sizeof(NV_OF_FLOW_VECTOR);
+        m_ElementSize[NV_OF_BUFFER_USAGE_OUTPUT] = sizeof(NV_OF_FLOW_VECTOR);
     }
     else if (m_ofMode == NV_OF_MODE_STEREODISPARITY)
     {
         outBufFmt = NV_OF_BUFFER_FORMAT_SHORT;
-        m_outputElementSize = sizeof(NV_OF_STEREO_DISPARITY);
+        m_ElementSize[NV_OF_BUFFER_USAGE_OUTPUT]  = sizeof(NV_OF_STEREO_DISPARITY);
     }
     else
     {
         NVOF_THROW_ERROR("Unsupported OF mode", NV_OF_ERR_INVALID_PARAM);
     }
 
-    memset(&m_outputBufferDesc, 0, sizeof(m_outputBufferDesc));
-    m_outputBufferDesc.width = nOutWidth;
-    m_outputBufferDesc.height = nOutHeight;
-    m_outputBufferDesc.bufferFormat = outBufFmt;
-    m_outputBufferDesc.bufferUsage = NV_OF_BUFFER_USAGE_OUTPUT;
+    memset(&m_BufferDesc[NV_OF_BUFFER_USAGE_OUTPUT], 0, sizeof(NV_OF_BUFFER_DESCRIPTOR));
+    m_BufferDesc[NV_OF_BUFFER_USAGE_OUTPUT].width = nOutWidth;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_OUTPUT].height = nOutHeight;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_OUTPUT].bufferFormat = outBufFmt;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_OUTPUT].bufferUsage = NV_OF_BUFFER_USAGE_OUTPUT;
 
-    memset(&m_costBufferDesc, 0, sizeof(m_costBufferDesc));
-    m_costBufferDesc.width = nOutWidth;
-    m_costBufferDesc.height = nOutHeight;
-    m_costBufferDesc.bufferFormat = NV_OF_BUFFER_FORMAT_UINT8;
-    m_costBufferDesc.bufferUsage = NV_OF_BUFFER_USAGE_COST;
-    m_costBufElementSize = sizeof(uint32_t);
+    memset(&m_BufferDesc[NV_OF_BUFFER_USAGE_COST], 0, sizeof(NV_OF_BUFFER_DESCRIPTOR));
+    m_BufferDesc[NV_OF_BUFFER_USAGE_COST].width = nOutWidth;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_COST].height = nOutHeight;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_COST].bufferFormat = NV_OF_BUFFER_FORMAT_UINT8;
+    m_BufferDesc[NV_OF_BUFFER_USAGE_COST].bufferUsage = NV_OF_BUFFER_USAGE_COST;
+    m_ElementSize[NV_OF_BUFFER_USAGE_COST] = sizeof(uint32_t);
 
-    memset(&m_hintBufferDesc, 0, sizeof(m_hintBufferDesc));
-    m_hintBufferDesc.width = nOutWidth;
-    m_hintBufferDesc.height = nOutHeight;
-    m_hintBufferDesc.bufferFormat = outBufFmt;
-    m_hintBufferDesc.bufferUsage = NV_OF_BUFFER_USAGE_HINT;
-    m_hintBufElementSize = m_outputElementSize;
-    m_nHintGridSize = NV_OF_HINT_VECTOR_GRID_SIZE_UNDEFINED;
+    if (bEnableHints)
+    {
+        memset(&m_BufferDesc[NV_OF_BUFFER_USAGE_HINT], 0, sizeof(NV_OF_BUFFER_DESCRIPTOR));
+        m_nHintGridSize = nHintGridSize;
+        auto nHintWidth = (m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].width + m_nHintGridSize - 1) / m_nHintGridSize;
+        auto nHintHeight = (m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].height + m_nHintGridSize - 1) / m_nHintGridSize;
+        m_BufferDesc[NV_OF_BUFFER_USAGE_HINT].width = nHintWidth;
+        m_BufferDesc[NV_OF_BUFFER_USAGE_HINT].height = nHintHeight;
+        m_BufferDesc[NV_OF_BUFFER_USAGE_HINT].bufferFormat = outBufFmt;
+        m_BufferDesc[NV_OF_BUFFER_USAGE_HINT].bufferUsage = NV_OF_BUFFER_USAGE_HINT;
+        m_ElementSize[NV_OF_BUFFER_USAGE_HINT] = m_ElementSize[NV_OF_BUFFER_USAGE_OUTPUT];
+    }
 
     memset(&m_initParams, 0, sizeof(m_initParams));
-    m_initParams.width = m_inputBufferDesc.width;
-    m_initParams.height = m_inputBufferDesc.height;
-    m_initParams.enableExternalHints = NV_OF_FALSE;
+    m_initParams.inputBufferFormat = m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].bufferFormat;
+    m_initParams.width = m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].width;
+    m_initParams.height = m_BufferDesc[NV_OF_BUFFER_USAGE_INPUT].height;
+
+    m_initParams.enableExternalHints = bEnableHints ? NV_OF_TRUE : NV_OF_FALSE;
     m_initParams.enableOutputCost = NV_OF_FALSE;
     m_initParams.hintGridSize = (NV_OF_HINT_VECTOR_GRID_SIZE) m_nHintGridSize;
     m_initParams.outGridSize = (NV_OF_OUTPUT_VECTOR_GRID_SIZE)m_nOutGridSize;
@@ -177,87 +198,45 @@ void NvOF::Execute(NvOFBuffer* image1,
 }
 
 
-std::vector<std::unique_ptr<NvOFBuffer>>
+std::vector<NvOFBufferObj>
 NvOF::CreateBuffers(NV_OF_BUFFER_USAGE usage, uint32_t numBuffers, void* arrOutputFencePoint, uint32_t numOutputFencePoint)
 {
-    std::vector<std::unique_ptr<NvOFBuffer>> ofBuffers;
-
-    if (usage == NV_OF_BUFFER_USAGE_INPUT)
+    if (usage == NV_OF_BUFFER_USAGE_UNDEFINED || usage >= NV_OF_BUFFER_USAGE_MAX)
     {
-        ofBuffers = DoAllocBuffers(m_inputBufferDesc, m_inputElementSize, numBuffers, arrOutputFencePoint, numOutputFencePoint);
-    }
-    else if (usage == NV_OF_BUFFER_USAGE_OUTPUT)
-    {
-        ofBuffers = DoAllocBuffers(m_outputBufferDesc, m_outputElementSize, numBuffers, arrOutputFencePoint, numOutputFencePoint);
-    }
-    else if (usage == NV_OF_BUFFER_USAGE_COST)
-    {
-        ofBuffers = DoAllocBuffers(m_costBufferDesc, m_costBufElementSize, numBuffers,  arrOutputFencePoint, numOutputFencePoint);
-    }
-    else if (usage == NV_OF_BUFFER_USAGE_HINT)
-    {
-        ofBuffers = DoAllocBuffers(m_hintBufferDesc, m_hintBufElementSize, numBuffers,  arrOutputFencePoint, numOutputFencePoint);
+        throw std::runtime_error("Invalid ::NV_OF_BUFFER_USAGE value ");
     }
     else
     {
-        throw std::runtime_error("Invalid parameter");
+        return DoAllocBuffers(m_BufferDesc[usage], m_ElementSize[usage], numBuffers, arrOutputFencePoint, numOutputFencePoint);
     }
-
-    return ofBuffers;
 }
 
-std::vector<std::unique_ptr<NvOFBuffer>>
+std::vector<NvOFBufferObj>
 NvOF::CreateBuffers(uint32_t nWidth, uint32_t nHeight, NV_OF_BUFFER_USAGE usage, uint32_t numBuffers, void* arrOutputFencePoint, uint32_t numOutputFencePoint)
 {
-    std::vector<std::unique_ptr<NvOFBuffer>> ofBuffers;
+    NV_OF_BUFFER_DESCRIPTOR bufferDesc { nWidth, nHeight, usage, m_BufferDesc[usage].bufferFormat };
 
-    NV_OF_BUFFER_DESCRIPTOR bufferDesc;
-
-    if (usage == NV_OF_BUFFER_USAGE_OUTPUT)
+    if (usage == NV_OF_BUFFER_USAGE_UNDEFINED || usage >= NV_OF_BUFFER_USAGE_MAX)
     {
-        bufferDesc.width = nWidth;
-        bufferDesc.height = nHeight;
-        bufferDesc.bufferFormat = m_outputBufferDesc.bufferFormat;
-        bufferDesc.bufferUsage = NV_OF_BUFFER_USAGE_OUTPUT;
-
-        ofBuffers = DoAllocBuffers(bufferDesc, m_outputElementSize, numBuffers, arrOutputFencePoint, numOutputFencePoint);
+        throw std::runtime_error("Invalid ::NV_OF_BUFFER_USAGE value ");
     }
     else
     {
-        throw std::runtime_error("Invalid parameter");
+        return DoAllocBuffers(bufferDesc, m_ElementSize[usage], numBuffers, arrOutputFencePoint, numOutputFencePoint);
     }
-
-    return ofBuffers;
 }
 
 NvOFBufferObj NvOF::RegisterPreAllocBuffers(NV_OF_BUFFER_DESCRIPTOR ofBufDesc,
     const void* pResource,void* inputFencePoint, void* outputFencePoint)
 {
-    NV_OF_BUFFER_USAGE usage = ofBufDesc.bufferUsage;
-    NvOFBufferObj ofBuffers;
-    uint32_t elementSize;
-    if (usage == NV_OF_BUFFER_USAGE_INPUT)
+    if (ofBufDesc.bufferUsage == NV_OF_BUFFER_USAGE_UNDEFINED || ofBufDesc.bufferUsage >= NV_OF_BUFFER_USAGE_MAX)
     {
-        elementSize = m_inputElementSize;
-    }
-    else if (usage == NV_OF_BUFFER_USAGE_OUTPUT)
-    {
-        elementSize = m_outputElementSize;
-    }
-    else if (usage == NV_OF_BUFFER_USAGE_COST)
-    {
-        elementSize = m_costBufElementSize;
-    }
-    else if (usage == NV_OF_BUFFER_USAGE_HINT)
-    {
-        elementSize = m_hintBufElementSize;
+        throw std::runtime_error("Invalid ::NV_OF_BUFFER_USAGE value ");
     }
     else
     {
-        throw std::runtime_error("Invalid parameter");
+        return DoRegisterBuffers(ofBufDesc, m_ElementSize[ofBufDesc.bufferUsage], pResource, inputFencePoint, outputFencePoint);
     }
-    ofBuffers = DoRegisterBuffers(ofBufDesc, elementSize, pResource, inputFencePoint, outputFencePoint);
-    return ofBuffers;
 }
 
 void NvOFAPI::LoadNvOFAPI()
@@ -277,4 +256,16 @@ void NvOFAPI::LoadNvOFAPI()
     }
 
     m_hModule = hModule;
+}
+
+NvOFAPI::~NvOFAPI()
+{
+    if (m_hModule)
+    {
+#if defined(_WIN32) || defined(_WIN64)
+        FreeLibrary(m_hModule);
+#else
+        dlclose(m_hModule);
+#endif
+    }
 }

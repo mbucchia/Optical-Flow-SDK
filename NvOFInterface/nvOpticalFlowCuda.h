@@ -1,7 +1,7 @@
 /*
 * This copyright notice applies to this header file only:
 *
-* Copyright (c) 2021 NVIDIA Corporation
+* Copyright (c) 2018-2023 NVIDIA Corporation
 *
 * Permission is hereby granted, free of charge, to any person
 * obtaining a copy of this software and associated documentation
@@ -29,8 +29,6 @@
 *   NVIDIA GPUs - Turing and above contains a hardware-based optical flow engine
 *   which provides fully-accelerated hardware-based optical flow and stereo estimation.
 *   nvOpticalFlowCuda.h provides cuda specific enums, structure definitions and function pointers prototypes.
-* \date 2021
-*  This file contains CUDA specific enums, structure definitions and function prototypes.
 */
 
 #ifndef _NV_OPTICALFLOW_CUDA_H_
@@ -107,11 +105,12 @@ typedef NV_OF_STATUS(NVOFAPI* PFNNVCREATEOPTICALFLOWCUDA) (CUcontext device, NvO
 * \param [in] hOf
 *   Object of ::NvOFHandle type.
 * \param [in] inputStream
-*   CUstream type object which is used to process ::NV_OF_EXECUTE_PARAMS::inputFrame,
-*   ::NV_OF_EXECUTE_PARAMS::referenceFrame and optional NV_OF_EXECUTE_PARAMS::externalHints.
+*   CUstream type object which is used to process ::NV_OF_EXECUTE_INPUT_PARAMS::inputFrame,
+*   ::NV_OF_EXECUTE_INPUT_PARAMS::referenceFrame and optional NV_OF_EXECUTE_INPUT_PARAMS::externalHints.
 * \param [in] outputStream
-*  CUstream type object which is used to process ::NV_OF_EXECUTE_PARAMS::outputBuffer and 
-*  optional NV_OF_EXECUTE_PARAMS::costBuffer.
+*  CUstream type object which is used to process ::NV_OF_EXECUTE_OUTPUT_PARAMS::outputBuffer and 
+*  optional ::NV_OF_EXECUTE_OUTPUT_PARAMS::costBuffer, ::NV_OF_EXECUTE_OUTPUT_PARAMS::bwdOutputBuffer,
+*  ::NV_OF_EXECUTE_OUTPUT_PARAMS::bwdOutputCostBuffer.
 *
 * \return
 * ::NV_OF_SUCCESS \n

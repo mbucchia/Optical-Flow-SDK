@@ -1,7 +1,7 @@
 /*
 * This copyright notice applies to this header file only:
 *
-* Copyright (c) 2021 NVIDIA Corporation
+* Copyright (c) 2020-2023 NVIDIA Corporation
 *
 * Permission is hereby granted, free of charge, to any person
 * obtaining a copy of this software and associated documentation
@@ -28,10 +28,7 @@
 * \file nvOpticalFlowD3D12.h
 *   NVIDIA GPUs - Turing and above contains a hardware-based optical flow engine
 *   which provides fully-accelerated hardware-based optical flow and stereo estimation.
-*   nvOpticalFlowD3D12.h provides interface for NVIDIA optical flow engine for Direct3D12.
-* \date 2021
-*  This file contains the interface, constants, structure definitions and function prototypes
-*  for Direct3D12 resource.
+*   nvOpticalFlowD3D12.h provides D3D12 specific enums, structure definitions and function prototypes.
 * */
 #ifndef _NV_OPTICALFLOW_D3D12_H_
 #define _NV_OPTICALFLOW_D3D12_H_
