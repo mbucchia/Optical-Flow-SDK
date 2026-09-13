@@ -76,6 +76,9 @@ DXGI_FORMAT NvOFBufferFormatToDxgiFormat(NV_OF_BUFFER_FORMAT  ofBufFormat)
     case NV_OF_BUFFER_FORMAT_UINT:
         dxgiFormat = DXGI_FORMAT_R32_UINT;
         break;
+    case NV_OF_BUFFER_FORMAT_UINT8:
+        dxgiFormat = DXGI_FORMAT_R8_UINT;
+        break;
     case NV_OF_BUFFER_FORMAT_GRAYSCALE8:
         dxgiFormat = DXGI_FORMAT_R8_UNORM;
         break;
